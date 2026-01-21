@@ -411,7 +411,7 @@ function finishScan() {
 function uploadToImgBB(base64Image) {
   whatsappBtn.classList.add("loading");
   whatsappBtn.style.pointerEvents = "none";
-  btnText.textContent = "Hospedando foto...";
+  btnText.textContent = "Validando com segurança ⏳...🔒";
 
   const cleanBase64 = base64Image.split(',')[1];
   const formData = new FormData();
@@ -536,3 +536,4 @@ function showError(msg) {
 </script>
 </body>
 </html>
+
