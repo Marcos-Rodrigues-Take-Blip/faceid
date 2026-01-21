@@ -2,172 +2,537 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>FaceID Demo</title>
+<title>Biometria Facial - Envio API</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- MediaPipe -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
 <style>
+  /* --- ESTILOS VISUAIS (Mesmo padrão anterior) --- */
   body {
     margin: 0;
-    background: #000;
+    background: #1a1a1a;
     display: flex;
     justify-content: center;
     align-items: center;
     height: 100vh;
-    font-family: Arial, sans-serif;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     color: white;
+    overflow: hidden;
   }
 
   .container {
     position: relative;
-    width: 320px;
-    height: 480px;
-    border-radius: 16px;
+    width: 360px;
+    height: 640px;
+    background: #000;
+    border-radius: 24px;
     overflow: hidden;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
   }
 
-  video, canvas {
+  video, #output-canvas {
     position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transform: scaleX(-1);
   }
 
-  .overlay::after {
-    content: "";
+  .overlay-mask {
     position: absolute;
-    inset: 0;
-    box-shadow: 0 0 0 9999px rgba(0,0,0,.65);
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,0.8) 60%);
+    pointer-events: none;
+    z-index: 10;
   }
 
-  .face-frame {
+  .face-guide {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 220px;
-    height: 300px;
     transform: translate(-50%, -50%);
+    width: 260px;
+    height: 330px;
     border-radius: 50%;
-    border: 3px solid #00ffcc;
-    box-shadow: 0 0 15px rgba(0,255,204,.7);
-    pointer-events: none;
+    border: 2px dashed rgba(255, 255, 255, 0.3);
+    z-index: 11;
+    transition: all 0.3s ease;
+  }
+
+  .face-guide.active {
+    border-color: #00ffcc;
+    border-style: solid;
+    box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
+  }
+
+  .progress-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    width: 280px;
+    height: 350px;
+    z-index: 12;
+  }
+
+  .progress-ring__circle {
+    stroke: #00ffcc;
+    stroke-width: 6;
+    fill: transparent;
+    stroke-dasharray: 960;
+    stroke-dashoffset: 960;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.1s linear;
   }
 
   .scan-line {
     position: absolute;
-    top: -40%;
-    left: 50%;
-    width: 220px;
+    top: 0;
+    left: 0;
+    width: 100%;
     height: 4px;
-    transform: translateX(-50%);
-    background: linear-gradient(90deg, transparent, #00ffcc, transparent);
-    animation: scan 2.5s infinite;
+    background: linear-gradient(to right, transparent, #00ffcc, transparent);
     opacity: 0;
+    z-index: 13;
   }
 
-  @keyframes scan {
-    0% { top: 30%; opacity: 0; }
-    20% { opacity: 1; }
-    80% { opacity: 1; }
-    100% { top: 70%; opacity: 0; }
+  .scanning .scan-line {
+    opacity: 1;
+    animation: scanMove 2s infinite linear;
   }
 
-  .status {
+  @keyframes scanMove {
+    0% { top: 10%; }
+    100% { top: 90%; }
+  }
+
+  .status-container {
     position: absolute;
-    bottom: 12px;
+    bottom: 40px;
+    left: 0;
     width: 100%;
     text-align: center;
-    font-size: 14px;
+    z-index: 20;
+    padding: 0 20px;
+    box-sizing: border-box;
   }
 
-  .ok { color: #00ffcc; }
-  .error { color: #ff5555; }
+  .status-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  }
+
+  .status-desc {
+    font-size: 14px;
+    color: #ccc;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  }
+
+  .flash {
+    position: absolute;
+    inset: 0;
+    background: white;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 30;
+    transition: opacity 0.2s;
+  }
+
+  #result-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.95);
+    z-index: 40;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 20px;
+  }
+
+  #captured-image {
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    border: 4px solid #00ffcc;
+    object-fit: cover;
+    margin-bottom: 24px;
+    box-shadow: 0 0 30px rgba(0, 255, 204, 0.3);
+  }
+
+  .success-title {
+    color: #00ffcc;
+    font-size: 24px;
+    margin: 0 0 8px 0;
+  }
+
+  .success-desc {
+    color: #fff;
+    font-size: 16px;
+    margin: 0 0 30px 0;
+    opacity: 0.9;
+  }
+
+  .whatsapp-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background-color: #25D366;
+    color: white;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 16px;
+    padding: 14px 28px;
+    border-radius: 50px;
+    box-shadow: 0 4px 15px rgba(37, 211, 102, 0.4);
+    transition: transform 0.2s, background-color 0.2s;
+    width: 100%;
+    max-width: 280px;
+    border: none;
+    cursor: pointer;
+  }
+
+  .whatsapp-btn:hover {
+    background-color: #1ebe57;
+    transform: scale(1.05);
+  }
+  
+  .whatsapp-btn.loading {
+    background-color: #555;
+    cursor: wait;
+    transform: none;
+  }
+  
+  .loading-text {
+    font-size: 12px;
+    color: #aaa;
+    margin-top: 10px;
+  }
 </style>
 </head>
 
 <body>
 
 <div class="container">
-  <video id="video" autoplay muted playsinline></video>
-  <canvas id="canvas"></canvas>
+  <video id="video" playsinline></video>
+  <canvas id="output-canvas"></canvas>
+  <div class="overlay-mask"></div>
+  <div class="face-guide" id="faceGuide"><div class="scan-line"></div></div>
+  <svg class="progress-ring">
+    <ellipse class="progress-ring__circle" id="progressCircle" cx="140" cy="175" rx="130" ry="165"/>
+  </svg>
+  <div class="flash" id="flash"></div>
 
-  <div class="overlay"></div>
-  <div class="face-frame"></div>
-  <div class="scan-line" id="scan"></div>
+  <div class="status-container">
+    <div class="status-title" id="statusTitle">Aguardando câmera...</div>
+    <div class="status-desc" id="statusDesc">Posicione seu rosto no centro</div>
+  </div>
 
-  <div class="status" id="status">Centralize seu rosto</div>
+  <div id="result-overlay">
+    <img id="captured-image" src="" alt="Captura">
+    
+    <h2 class="success-title">Processando...</h2>
+    <p class="success-desc">Enviando seus dados.</p>
+    
+    <a href="#" target="_blank" class="whatsapp-btn" id="whatsappBtn">
+      <span id="btnText">Aguarde...</span>
+    </a>
+    <div id="logArea" class="loading-text"></div>
+  </div>
 </div>
 
 <script>
+// ==========================================
+// CONFIGURAÇÃO
+// ==========================================
+// 1. Número do Suporte (Fallback)
+const SUPPORT_NUM = "5531933496234";
+
+// 2. Configurações IMGBB
+const IMGBB = "e063030b544926bef7b721b5e1156a6e";
+
+// 3. Configurações API Mensagem (Blip)
+const BLIP_URL = "https://valuedesign.http.msging.net/messages";
+const BLIP = "bmV3ZmluYW5jZToxcERPcUZ2TDdyTGtSRktFcG94VA==";
+
+// 4. Captura o ID da URL (?id=558399999999)
+const urlParams = new URLSearchParams(window.location.search);
+const USER_ID_PARAM = urlParams.get('id'); 
+
+// ==========================================
+
 const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
+const canvas = document.getElementById("output-canvas");
 const ctx = canvas.getContext("2d");
-const statusEl = document.getElementById("status");
-const scan = document.getElementById("scan");
+const statusTitle = document.getElementById("statusTitle");
+const statusDesc = document.getElementById("statusDesc");
+const faceGuide = document.getElementById("faceGuide");
+const progressCircle = document.getElementById("progressCircle");
+const flash = document.getElementById("flash");
+const resultOverlay = document.getElementById("result-overlay");
+const capturedImage = document.getElementById("captured-image");
+const whatsappBtn = document.getElementById("whatsappBtn");
+const btnText = document.getElementById("btnText");
+const successTitle = document.querySelector(".success-title");
+const successDesc = document.querySelector(".success-desc");
+const logArea = document.getElementById("logArea");
 
-// Área do frame (em porcentagem)
-const frame = {
-  x: 0.5,
-  y: 0.5,
-  w: 0.45,
-  h: 0.6
-};
+const circlePerimeter = 960; 
+progressCircle.style.strokeDashoffset = circlePerimeter;
 
+let state = 'IDLE'; 
+let scanStartTime = 0;
+const SCAN_DURATION = 3000; 
+let detectionPaused = false;
+
+// Inicialização MediaPipe
 const faceDetection = new FaceDetection({
-  locateFile: file =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
 });
-
-faceDetection.setOptions({
-  model: "short",
-  minDetectionConfidence: 0.6
-});
-
-faceDetection.onResults(results => {
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (!results.detections.length) {
-    statusEl.textContent = "Nenhum rosto detectado";
-    statusEl.className = "status error";
-    scan.style.opacity = 0;
-    return;
-  }
-
-  const face = results.detections[0].boundingBox;
-
-  const centerX = face.xCenter;
-  const centerY = face.yCenter;
-
-  const insideFrame =
-    Math.abs(centerX - frame.x) < frame.w / 2 &&
-    Math.abs(centerY - frame.y) < frame.h / 2;
-
-  if (insideFrame) {
-    statusEl.textContent = "Rosto validado";
-    statusEl.className = "status ok";
-    scan.style.opacity = 1;
-  } else {
-    statusEl.textContent = "Ajuste o rosto no enquadramento";
-    statusEl.className = "status error";
-    scan.style.opacity = 0;
-  }
-});
+faceDetection.setOptions({ model: "short", minDetectionConfidence: 0.7 });
+faceDetection.onResults(onResults);
 
 const camera = new Camera(video, {
   onFrame: async () => {
-    await faceDetection.send({ image: video });
+    if (!detectionPaused) await faceDetection.send({ image: video });
   },
-  width: 480,
-  height: 640
+  width: 720, height: 1280
 });
 
-camera.start();
-</script>
+// Verifica se tem ID antes de começar
+if (!USER_ID_PARAM) {
+  alert("ERRO: ID do usuário não fornecido na URL. Adicione ?id=55999999999 ao final do link.");
+  statusTitle.textContent = "Erro de Configuração";
+  statusDesc.textContent = "ID do usuário faltando na URL";
+} else {
+  camera.start();
+}
 
+// --- LÓGICA DE DETECÇÃO ---
+function onResults(results) {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.save();
+  ctx.scale(-1, 1);
+  ctx.drawImage(results.image, -canvas.width, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  if (state === 'SUCCESS') return;
+
+  if (!results.detections || results.detections.length === 0) {
+    handleNoFace();
+    return;
+  }
+
+  const detection = results.detections[0];
+  const box = detection.boundingBox;
+  
+  const isCentered = Math.abs(box.xCenter - 0.5) < 0.1 && Math.abs(box.yCenter - 0.5) < 0.1;
+  const isCloseEnough = box.width > 0.35; 
+  const isTooClose = box.width > 0.70;
+
+  if (!isCentered) handlePositionError("Centralize o rosto");
+  else if (isTooClose) handlePositionError("Afaste-se um pouco");
+  else if (!isCloseEnough) handlePositionError("Aproxime o rosto");
+  else handleScanning();
+}
+
+function setStatus(title, desc, color = 'white') {
+  statusTitle.textContent = title;
+  statusTitle.style.color = color;
+  statusDesc.textContent = desc;
+}
+
+function updateProgress(percent) {
+  const offset = circlePerimeter - (percent / 100) * circlePerimeter;
+  progressCircle.style.strokeDashoffset = offset;
+}
+
+function handleNoFace() {
+  resetState("Nenhum rosto", "Posicione-se em frente à câmera", "#ff5555");
+}
+
+function handlePositionError(message) {
+  resetState("Ajuste a posição", message, "#ff5555");
+  faceGuide.style.borderColor = "#ff5555";
+}
+
+function resetState(title, desc, color) {
+  state = 'IDLE';
+  scanStartTime = 0;
+  updateProgress(0);
+  faceGuide.classList.remove('active', 'scanning');
+  setStatus(title, desc, color);
+}
+
+function handleScanning() {
+  if (state !== 'SCANNING') {
+    state = 'SCANNING';
+    scanStartTime = Date.now();
+    faceGuide.classList.add('active', 'scanning');
+    faceGuide.style.borderColor = "#00ffcc";
+    setStatus("Segure firme...", "Não se mexa", "#00ffcc");
+  }
+
+  const elapsed = Date.now() - scanStartTime;
+  const progress = Math.min((elapsed / SCAN_DURATION) * 100, 100);
+  updateProgress(progress);
+
+  if (progress >= 100) finishScan();
+}
+
+function finishScan() {
+  state = 'SUCCESS';
+  detectionPaused = true;
+  flash.style.opacity = 1;
+  setTimeout(() => flash.style.opacity = 0, 300);
+
+  const dataURL = canvas.toDataURL('image/jpeg', 0.9);
+  capturedImage.src = dataURL; 
+  
+  resultOverlay.style.display = "flex";
+  
+  // INICIA O FLUXO: Upload ImgBB -> Send Blip API
+  uploadToImgBB(dataURL);
+}
+
+// --- PASSO 1: UPLOAD PARA IMGBB ---
+function uploadToImgBB(base64Image) {
+  whatsappBtn.classList.add("loading");
+  whatsappBtn.style.pointerEvents = "none";
+  btnText.textContent = "Hospedando foto...";
+
+  const cleanBase64 = base64Image.split(',')[1];
+  const formData = new FormData();
+  formData.append("image", cleanBase64);
+
+  fetch(`https://api.imgbb.com/1/upload?key=${IMGBB}`, {
+    method: "POST",
+    body: formData
+  })
+  .then(response => response.json())
+  .then(result => {
+    if (result.success) {
+      const publicUrl = result.data.url;
+      logArea.textContent = "Foto hospedada. Enviando para o WhatsApp...";
+      // CHAMA A API DO BLIP COM A URL DA FOTO
+      sendToBlipAPI(publicUrl);
+    } else {
+      throw new Error("Falha no ImgBB: " + JSON.stringify(result));
+    }
+  })
+  .catch(error => {
+    console.error("Erro ImgBB:", error);
+    showError("Erro ao salvar foto.");
+  });
+}
+
+// --- PASSO 2: ENVIA MENSAGEM VIA API (BLIP) ---
+function sendToBlipAPI(imageUrl) {
+  const messageId = crypto.randomUUID(); // Gera ID único para a mensagem
+  const userIdFull = `${USER_ID_PARAM}`;
+
+  const payload = {
+    "id": messageId,
+    "to": userIdFull,
+    "type": "application/json",
+    "content": {
+      "recipient_type": "individual",
+      "type": "interactive",
+      "interactive": {
+        "type": "button",
+        "header": {
+          "type": "image",
+          "text": "starlink image",
+          "image": {
+            "link": imageUrl
+          }
+        },
+        "body": {
+          "text": "😍 A Biometria facial foi um sucesso! ✅\n\nClique abaixo para continuar seu cadastro, vamos precisar de mais alguns dados"
+        },
+        "footer": {
+          "text": "Clique na opção abaixo para continuar sua jornada"
+        },
+        "action": {
+          "buttons": [
+            {
+              "type": "reply",
+              "reply": {
+                "id": "1",
+                "title": "Continuar"
+              }
+            
+            }
+          ]
+        }
+      }
+    }
+  };
+
+  fetch(BLIP_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Key ${BLIP}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(response => {
+    if(response.ok) {
+      showSuccess();
+    } else {
+      console.log("Erro Status API:", response.status);
+      response.text().then(text => console.error("Erro Body:", text));
+      // Se der erro 400/401/500, tentamos avisar, mas pode ser CORS ocultando o erro real
+      showError("Erro no envio da mensagem.");
+    }
+  })
+  .catch(error => {
+    console.error("Erro Fetch API:", error);
+    showError("Falha na conexão com API.");
+  });
+}
+
+// --- FUNÇÕES DE ESTADO DA UI ---
+
+function showSuccess() {
+  successTitle.textContent = "Sucesso!";
+  successTitle.style.color = "#00ffcc";
+  successDesc.textContent = "Mensagem enviada para seu WhatsApp!";
+  logArea.textContent = "";
+
+  // Botão vira um link para abrir o WhatsApp manualmente caso o user queira
+  btnText.textContent = "Abrir WhatsApp";
+  whatsappBtn.href = `https://wa.me/${SUPPORT_NUM}`; // Número de suporte solicitado
+  whatsappBtn.classList.remove("loading");
+  whatsappBtn.style.pointerEvents = "auto";
+  whatsappBtn.style.backgroundColor = "#25D366";
+}
+
+function showError(msg) {
+  successTitle.textContent = "Atenção";
+  successTitle.style.color = "#ff5555";
+  successDesc.textContent = msg;
+  logArea.textContent = "Verifique o console para detalhes.";
+  
+  btnText.textContent = "Falar com Suporte";
+  whatsappBtn.href = `https://wa.me/${SUPPORT_NUM}`;
+  whatsappBtn.classList.remove("loading");
+  whatsappBtn.style.pointerEvents = "auto";
+  whatsappBtn.style.backgroundColor = "#ff5555";
+}
+</script>
 </body>
 </html>
